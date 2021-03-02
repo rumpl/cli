@@ -152,9 +152,12 @@ func (ctx *DiskUsageContext) verboseWrite() error {
 
 	// First images
 	for _, i := range ctx.Images {
+		im := ImageSummary{
+			ImageSummary: *i,
+		}
 		repo := "<none>"
 		tag := "<none>"
-		if len(i.RepoTags) > 0 && !isDangling(*i) {
+		if len(i.RepoTags) > 0 && !isDangling(im) {
 			// Only show the first tag
 			ref, err := reference.ParseNormalizedNamed(i.RepoTags[0])
 			if err != nil {
@@ -170,7 +173,7 @@ func (ctx *DiskUsageContext) verboseWrite() error {
 			repo:  repo,
 			tag:   tag,
 			trunc: trunc,
-			i:     *i,
+			i:     im,
 		})
 	}
 

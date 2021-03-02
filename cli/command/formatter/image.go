@@ -11,12 +11,13 @@ import (
 )
 
 const (
-	defaultImageTableFormat           = "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{if .CreatedSince }}{{.CreatedSince}}{{else}}N/A{{end}}\t{{.Size}}"
-	defaultImageTableFormatWithDigest = "table {{.Repository}}\t{{.Tag}}\t{{.Digest}}\t{{.ID}}\t{{if .CreatedSince }}{{.CreatedSince}}{{else}}N/A{{end}}\t{{.Size}}"
+	defaultImageTableFormat           = "table {{.Repository}}\t{{.Tag}}\t{{.Newest}}\t{{.ID}}\t{{if .CreatedSince }}{{.CreatedSince}}{{else}}N/A{{end}}\t{{.Size}}"
+	defaultImageTableFormatWithDigest = "table {{.Repository}}\t{{.Tag}}\t{{.Newest}}\t{{.Digest}}\t{{.ID}}\t{{if .CreatedSince }}{{.CreatedSince}}{{else}}N/A{{end}}\t{{.Size}}"
 
 	imageIDHeader    = "IMAGE ID"
 	repositoryHeader = "REPOSITORY"
 	tagHeader        = "TAG"
+	newestHeader     = "NEWEST"
 	digestHeader     = "DIGEST"
 )
 
@@ -26,7 +27,13 @@ type ImageContext struct {
 	Digest bool
 }
 
-func isDangling(image types.ImageSummary) bool {
+// ImageSummary ...
+type ImageSummary struct {
+	types.ImageSummary
+	Newest string
+}
+
+func isDangling(image ImageSummary) bool {
 	return len(image.RepoTags) == 1 && image.RepoTags[0] == "<none>:<none>" && len(image.RepoDigests) == 1 && image.RepoDigests[0] == "<none>@<none>"
 }
 
@@ -72,7 +79,7 @@ virtual_size: {{.Size}}
 }
 
 // ImageWrite writes the formatter images using the ImageContext
-func ImageWrite(ctx ImageContext, images []types.ImageSummary) error {
+func ImageWrite(ctx ImageContext, images []ImageSummary) error {
 	render := func(format func(subContext SubContext) error) error {
 		return imageFormat(ctx, images, format)
 	}
@@ -84,7 +91,7 @@ func needDigest(ctx ImageContext) bool {
 	return ctx.Digest || ctx.Format.Contains("{{.Digest}}")
 }
 
-func imageFormat(ctx ImageContext, images []types.ImageSummary, format func(subContext SubContext) error) error {
+func imageFormat(ctx ImageContext, images []ImageSummary, format func(subContext SubContext) error) error {
 	for _, image := range images {
 		formatted := []*imageContext{}
 		if isDangling(image) {
@@ -107,7 +114,7 @@ func imageFormat(ctx ImageContext, images []types.ImageSummary, format func(subC
 	return nil
 }
 
-func imageFormatTaggedAndDigest(ctx ImageContext, image types.ImageSummary) []*imageContext {
+func imageFormatTaggedAndDigest(ctx ImageContext, image ImageSummary) []*imageContext {
 	repoTags := map[string][]string{}
 	repoDigests := map[string][]string{}
 	images := []*imageContext{}
@@ -186,7 +193,7 @@ func imageFormatTaggedAndDigest(ctx ImageContext, image types.ImageSummary) []*i
 type imageContext struct {
 	HeaderContext
 	trunc  bool
-	i      types.ImageSummary
+	i      ImageSummary
 	repo   string
 	tag    string
 	digest string
@@ -198,6 +205,7 @@ func newImageContext() *imageContext {
 		"ID":           imageIDHeader,
 		"Repository":   repositoryHeader,
 		"Tag":          tagHeader,
+		"Newest":       newestHeader,
 		"Digest":       digestHeader,
 		"CreatedSince": CreatedSinceHeader,
 		"CreatedAt":    CreatedAtHeader,
@@ -227,6 +235,10 @@ func (c *imageContext) Repository() string {
 
 func (c *imageContext) Tag() string {
 	return c.tag
+}
+
+func (c *imageContext) Newest() string {
+	return c.i.Newest
 }
 
 func (c *imageContext) Digest() string {

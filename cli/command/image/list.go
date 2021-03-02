@@ -2,13 +2,17 @@ package image
 
 import (
 	"context"
-
+	"github.com/containerd/containerd/remotes/docker"
+	"github.com/distribution/distribution/v3/reference"
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/formatter"
 	"github.com/docker/cli/opts"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/image-notifications/client"
+	"github.com/docker/image-notifications/resolver"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 type imagesOptions struct {
@@ -92,5 +96,76 @@ func runImages(dockerCli command.Cli, options imagesOptions) error {
 		},
 		Digest: options.showDigests,
 	}
-	return formatter.ImageWrite(imageCtx, images)
+	var is []formatter.ImageSummary
+
+	r := resolver.New(docker.NewAuthorizer(nil, func(hostName string) (string, string, error) {
+		if hostName == "docker.io" {
+			hostName = "https://index.docker.io/v1/"
+		}
+		a, err := dockerCli.ConfigFile().GetAuthConfig(hostName)
+		if err != nil {
+			return "", "", err
+		}
+		if a.IdentityToken != "" {
+			return "", a.IdentityToken, nil
+		}
+		return a.Username, a.Password, nil
+	}))
+
+	c, err := client.New()
+	if err != nil {
+		return err
+	}
+
+	for _, i := range images {
+		newTag := newestTag(ctx,dockerCli, r, c, i)
+
+		is = append(is, formatter.ImageSummary{
+			ImageSummary: i,
+			Newest:       newTag,
+		})
+	}
+	return formatter.ImageWrite(imageCtx, is)
+}
+
+func newestTag(ctx context.Context,dockerCli command.Cli, r resolver.Resolver, c client.Client, image types.ImageSummary) string {
+	imageInspect, _, err := dockerCli.Client().ImageInspectWithRaw(ctx, image.ID)
+	if err != nil {
+		return ""
+	}
+	if len(imageInspect.RepoDigests) == 0 {
+		return ""
+	}
+
+	ref, err := parseRef(imageInspect.RepoTags[0])
+	if err != nil {
+		return ""
+	}
+
+	if strings.Contains(reference.FamiliarName(ref), "/") {
+		return ""
+	}
+
+	digest, err := r.GetDigest(ctx, ref, imageInspect.Architecture)
+	if err != nil {
+		return ""
+	}
+
+	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String())
+	if err != nil{
+		return ""
+	}
+	imageInfo := *imageInfoResponse.ImageInfos[0]
+	return imageInfo.Tags[0]
+}
+
+func parseRef(s string) (reference.Named, error) {
+	ref, err := reference.ParseNormalizedNamed(s)
+	if err != nil {
+		return nil, err
+	}
+
+	ref = reference.TagNameOnly(ref)
+
+	return ref, nil
 }
