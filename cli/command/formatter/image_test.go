@@ -26,66 +26,66 @@ func TestImageContext(t *testing.T) {
 		call     func() string
 	}{
 		{
-			imageCtx: imageContext{i: types.ImageSummary{ID: imageID}, trunc: true},
+			imageCtx: imageContext{i: ImageSummary{ID: imageID}, trunc: true},
 			expValue: stringid.TruncateID(imageID),
 			call:     ctx.ID,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{ID: imageID}, trunc: false},
+			imageCtx: imageContext{i: ImageSummary{ID: imageID}, trunc: false},
 			expValue: imageID,
 			call:     ctx.ID,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{Size: 10, VirtualSize: 10}, trunc: true},
+			imageCtx: imageContext{i: ImageSummary{Size: 10, VirtualSize: 10}, trunc: true},
 			expValue: "10B",
 			call:     ctx.Size,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{Created: unix}, trunc: true},
+			imageCtx: imageContext{i: ImageSummary{Created: unix}, trunc: true},
 			expValue: time.Unix(unix, 0).String(), call: ctx.CreatedAt,
 		},
 		// FIXME
 		// {imageContext{
-		// 	i:     types.ImageSummary{Created: unix},
+		// 	i:     ImageSummary{Created: unix},
 		// 	trunc: true,
 		// }, units.HumanDuration(time.Unix(unix, 0)), createdSinceHeader, ctx.CreatedSince},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{}, repo: "busybox"},
+			imageCtx: imageContext{i: ImageSummary{}, repo: "busybox"},
 			expValue: "busybox",
 			call:     ctx.Repository,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{}, tag: "latest"},
+			imageCtx: imageContext{i: ImageSummary{}, tag: "latest"},
 			expValue: "latest",
 			call:     ctx.Tag,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{}, digest: "sha256:d149ab53f8718e987c3a3024bb8aa0e2caadf6c0328f1d9d850b2a2a67f2819a"},
+			imageCtx: imageContext{i: ImageSummary{}, digest: "sha256:d149ab53f8718e987c3a3024bb8aa0e2caadf6c0328f1d9d850b2a2a67f2819a"},
 			expValue: "sha256:d149ab53f8718e987c3a3024bb8aa0e2caadf6c0328f1d9d850b2a2a67f2819a",
 			call:     ctx.Digest,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{Containers: 10}},
+			imageCtx: imageContext{i: ImageSummary{Containers: 10}},
 			expValue: "10",
 			call:     ctx.Containers,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{VirtualSize: 10000}},
+			imageCtx: imageContext{i: ImageSummary{VirtualSize: 10000}},
 			expValue: "10kB",
 			call:     ctx.VirtualSize,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{SharedSize: 10000}},
+			imageCtx: imageContext{i: ImageSummary{SharedSize: 10000}},
 			expValue: "10kB",
 			call:     ctx.SharedSize,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{SharedSize: 5000, VirtualSize: 20000}},
+			imageCtx: imageContext{i: ImageSummary{SharedSize: 5000, VirtualSize: 20000}},
 			expValue: "15kB",
 			call:     ctx.UniqueSize,
 		},
 		{
-			imageCtx: imageContext{i: types.ImageSummary{Created: zeroTime}},
+			imageCtx: imageContext{i: ImageSummary{Created: zeroTime}},
 			expValue: "",
 			call:     ctx.CreatedSince,
 		},
@@ -299,7 +299,7 @@ image_id: imageID3
 		},
 	}
 
-	images := []types.ImageSummary{
+	images := []ImageSummary{
 		{ID: "imageID1", RepoTags: []string{"image:tag1"}, RepoDigests: []string{"image@sha256:cbbf2f9a99b47fc460d422812b6a5adff7dfee951d8fa2e4a98caa0382cfbdbf"}, Created: unixTime},
 		{ID: "imageID2", RepoTags: []string{"image:tag2"}, Created: zeroTime},
 		{ID: "imageID3", RepoTags: []string{"<none>:<none>"}, RepoDigests: []string{"<none>@<none>"}, Created: unixTime},
@@ -322,7 +322,7 @@ image_id: imageID3
 
 func TestImageContextWriteWithNoImage(t *testing.T) {
 	out := bytes.NewBufferString("")
-	images := []types.ImageSummary{}
+	images := []ImageSummary{}
 
 	cases := []struct {
 		context  ImageContext

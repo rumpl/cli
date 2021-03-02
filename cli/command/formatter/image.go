@@ -17,7 +17,7 @@ const (
 	imageIDHeader    = "IMAGE ID"
 	repositoryHeader = "REPOSITORY"
 	tagHeader        = "TAG"
-	newestHeader     = "NEWEST"
+	newestHeader     = "NEWEST TAG"
 	digestHeader     = "DIGEST"
 )
 

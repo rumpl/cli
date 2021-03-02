@@ -156,7 +156,7 @@ func newestTag(ctx context.Context,dockerCli command.Cli, r resolver.Resolver, c
 		return ""
 	}
 	imageInfo := *imageInfoResponse.ImageInfos[0]
-	return imageInfo.Tags[0]
+	return strings.Split(imageInfo.Tags[0], ":")[1]
 }
 
 func parseRef(s string) (reference.Named, error) {
