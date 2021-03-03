@@ -8,6 +8,10 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/containerd/containerd/remotes/docker"
+	"github.com/docker/image-notifications/client"
+	"github.com/docker/image-notifications/resolver"
+	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"io"
 	"io/ioutil"
 	"os"
@@ -16,11 +20,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/distribution/distribution/v3/reference"
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/image/build"
 	"github.com/docker/cli/opts"
-	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -31,6 +35,7 @@ import (
 	"github.com/docker/docker/pkg/streamformatter"
 	"github.com/docker/docker/pkg/urlutil"
 	units "github.com/docker/go-units"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -212,7 +217,11 @@ func runBuild(dockerCli command.Cli, options buildOptions) error {
 		return err
 	}
 	if buildkitEnabled {
-		return runBuildBuildKit(dockerCli, options)
+		err = runBuildBuildKit(dockerCli, options)
+		if err != nil {
+			return err
+		}
+		return newVersionInDockerfile(dockerCli, options.dockerfileName)
 	}
 
 	var (
@@ -430,6 +439,11 @@ func runBuild(dockerCli command.Cli, options buildOptions) error {
 	if options.quiet {
 		imageID = fmt.Sprintf("%s", buildBuff)
 		_, _ = fmt.Fprint(dockerCli.Out(), imageID)
+	} else {
+		err = newVersionInDockerfile(dockerCli, options.dockerfileName)
+		if err != nil {
+			return err
+		}
 	}
 
 	if options.imageIDFile != "" {
@@ -663,4 +677,160 @@ func parseOutputs(inp []string) ([]types.ImageBuildOutput, error) {
 		outs = append(outs, out)
 	}
 	return outs, nil
+}
+
+func newVersionInDockerfile(dockerCli command.Cli, dockerfile string) error {
+	dockerfilePath := dockerfile
+	if dockerfile == "" {
+		dockerfilePath = "./Dockerfile"
+	}
+	tree, err := parseDockerfile(dockerfilePath)
+	if err != nil {
+		return err
+	}
+	fromCmds := []instructions.Stage{}
+	for _, c := range tree.AST.Children {
+		inst, err := instructions.ParseInstruction(c)
+		if err != nil {
+			continue
+		}
+		if c.Value != "from" {
+			continue
+		}
+		from, ok := inst.(*instructions.Stage)
+		if !ok {
+			continue
+		}
+
+		fromCmds = append(fromCmds, *from)
+	}
+
+	for _, cmd := range fromCmds {
+		imageInfo, _, err := imageInfoAndInspect(dockerCli, cmd.BaseName)
+		if err != nil || imageInfo.Digest == "" {
+			continue
+		}
+		fmt.Println()
+
+		target := fmt.Sprintf("Target \"%s\"", cmd.Name)
+		if cmd.Name == "" {
+			target = "FROM"
+		}
+		tagStartPosition := strings.Index(cmd.SourceCode, cmd.BaseName)
+		fmt.Printf("%s:%d:%d: %s is based on \"%s\" a new version \"%s\" is avalaible.\n", dockerfilePath,
+			cmd.Location[0].Start.Line, tagStartPosition, target, cmd.BaseName, imageInfo.Tags[0])
+
+		fmt.Println(summary(imageInfo))
+
+		displayChangelog(imageInfo)
+
+		displayCVEs(imageInfo)
+
+	}
+
+	return nil
+
+}
+
+func summary(imageInfo client.ImageInfo) string {
+	result := ""
+	cvesSummary := map[string]int{}
+
+	for _, cve := range imageInfo.CVEs {
+		cvesSummary[cve.Severity] = cvesSummary[cve.Severity] + 1
+	}
+
+	if len(cvesSummary) == 0 {
+		return result
+	}
+
+	var cves []string
+	for key, value := range cvesSummary {
+		cves = append(cves, fmt.Sprintf("%d %s", value, strings.ToLower(key)))
+	}
+
+	result = fmt.Sprintf("Updating to %s would fix %s CVEs, for more info %s", strings.Join(imageInfo.Tags, ", "), strings.Join(cves, ", "), *imageInfo.Hub)
+
+	return result
+}
+
+func displayCVEs(imageInfo client.ImageInfo) {
+	if imageInfo.CVEs != nil {
+		fmt.Println()
+		fmt.Println("Fixed CVEs")
+		for _, cve := range imageInfo.CVEs {
+			fmt.Println(cve.ID, cve.Severity)
+		}
+	}
+}
+
+func displayChangelog(imageInfo client.ImageInfo) {
+	if imageInfo.Changelog != nil {
+		fmt.Println()
+		fmt.Println("Changelog: ")
+		fmt.Println(*imageInfo.Changelog)
+	}
+}
+
+
+func imageInfoAndInspect(cli command.Cli, imageRef string) (client.ImageInfo, types.ImageInspect, error) {
+	r := resolver.New(docker.NewAuthorizer(nil, func(hostName string) (string, string, error) {
+		if hostName == "docker.io" {
+			hostName = "https://index.docker.io/v1/"
+		}
+		a, err := cli.ConfigFile().GetAuthConfig(hostName)
+		if err != nil {
+			return "", "", err
+		}
+		if a.IdentityToken != "" {
+			return "", a.IdentityToken, nil
+		}
+		return a.Username, a.Password, nil
+	}))
+	ctx := context.Background()
+
+	// Inspect the image to get its architecture, we don't really need
+	// this, we could just know it?
+	image, _, err := cli.Client().ImageInspectWithRaw(ctx, imageRef)
+	if err != nil {
+		return client.ImageInfo{}, types.ImageInspect{}, err
+	}
+
+	ref, err := parseRef(imageRef)
+	if err != nil {
+		return client.ImageInfo{}, types.ImageInspect{}, err
+	}
+	if strings.Contains(reference.FamiliarName(ref), "/") {
+		return client.ImageInfo{}, types.ImageInspect{}, nil
+	}
+
+	digest, err := r.GetDigest(ctx, ref, image.Architecture)
+	if err != nil {
+		return client.ImageInfo{}, types.ImageInspect{}, err
+	}
+
+	c, err := client.New()
+	if err != nil {
+		return client.ImageInfo{}, types.ImageInspect{}, err
+	}
+
+	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String())
+	if err != nil {
+		return client.ImageInfo{}, types.ImageInspect{}, err
+	}
+	return *imageInfoResponse.ImageInfos[0], image, nil
+}
+
+func parseDockerfile(path string) (*parser.Result, error) {
+	// do we want to parse a Dockerfile from stdin? 🤔
+	if path == "-" {
+		return parser.Parse(os.Stdin)
+	} else {
+		r, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+		return parser.Parse(r)
+	}
 }
