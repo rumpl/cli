@@ -141,7 +141,6 @@ func newestTag(ctx context.Context,dockerCli command.Cli, r resolver.Resolver, c
 	if err != nil {
 		return ""
 	}
-
 	if strings.Contains(reference.FamiliarName(ref), "/") {
 		return ""
 	}
@@ -151,7 +150,7 @@ func newestTag(ctx context.Context,dockerCli command.Cli, r resolver.Resolver, c
 		return ""
 	}
 
-	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String())
+	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String(), imageInspect.RepoTags[0])
 	if err != nil{
 		return ""
 	}

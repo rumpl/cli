@@ -814,7 +814,8 @@ func imageInfoAndInspect(cli command.Cli, imageRef string) (client.ImageInfo, ty
 		return client.ImageInfo{}, types.ImageInspect{}, err
 	}
 
-	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String())
+	fmt.Println(image.RepoTags)
+	imageInfoResponse, err := c.GetImageInfo(ctx, digest.String(), image.RepoTags[0])
 	if err != nil {
 		return client.ImageInfo{}, types.ImageInspect{}, err
 	}

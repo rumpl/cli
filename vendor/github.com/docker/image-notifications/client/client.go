@@ -14,7 +14,7 @@ const server = "http://127.0.0.1:1224"
 // Client is the client for the image info server
 type Client interface {
 	// GetImageInfo ...
-	GetImageInfo(ctx context.Context, ID string) (*ImageInfoResponse, error)
+	GetImageInfo(ctx context.Context, ID string, tag string) (*ImageInfoResponse, error)
 }
 
 type client struct {
@@ -47,8 +47,8 @@ func New(opts ...Opt) (Client, error) {
 	return c, nil
 }
 
-func (c *client) GetImageInfo(ctx context.Context, ID string) (*ImageInfoResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/images/newest/%s", c.baseURL, ID), nil)
+func (c *client) GetImageInfo(ctx context.Context, ID string, tag string) (*ImageInfoResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/images/newest/%s/%s", c.baseURL, ID, tag), nil)
 	if err != nil {
 		return nil, err
 	}
